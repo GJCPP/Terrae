@@ -1,0 +1,14 @@
+[
+  {
+    "order": 1,
+    "case_id": "iris_binary_smoke_N32_T1_d2_b32_bins2",
+    "phase": "smoke",
+    "dataset": "iris-binary",
+    "N": 32,
+    "T": 1,
+    "d": 2,
+    "bins": 2,
+    "b": 32,
+    "routes": "terrae+zkboost"
+  }
+]
