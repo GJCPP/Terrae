@@ -220,9 +220,9 @@ def _summary_statistics(payload: dict[str, Any], case_result: dict[str, Any]) ->
     workload_aliases = {
         "padded_class_count": ("class_count",),
         "tree_count": ("tree_count",),
-        "node_count": ("active_node_count", "node_count"),
-        "active_node_count": ("active_node_count", "node_count"),
-        "allocated_node_slot_count": ("allocated_node_slot_count",),
+        "node_count": ("active_node_count",),
+        "active_node_count": ("active_node_count",),
+        "allocated_node_slot_count": ("allocated_node_slot_count", "node_count"),
         "internal_node_count": ("internal_node_count", "split_node_count"),
         "leaf_node_count": ("leaf_node_count", "semantic_leaf_node_count"),
         "candidate_count": ("candidate_count",),
@@ -238,6 +238,24 @@ def _summary_statistics(payload: dict[str, Any], case_result: dict[str, Any]) ->
                     break
         if isinstance(value, int):
             output[output_name] = value
+
+    # Native proof metrics call the padded trace length `node_count`. The
+    # trainer export separately records active model nodes (excluding dummy
+    # slots and padded class channels), which is the number reported by the
+    # paper. Prefer it even if an old payload mislabeled the padded length.
+    train_fields = (
+        case_result.get("benchmark_payload", {})
+        .get("train_export", {})
+        .get("fields", {})
+    )
+    for output_name, field_name in (
+        ("node_count", "active_node_count"),
+        ("active_node_count", "active_node_count"),
+        ("allocated_node_slot_count", "allocated_node_slot_count"),
+    ):
+        value = train_fields.get(field_name)
+        if value not in (None, ""):
+            output[output_name] = int(value)
     return output
 
 
@@ -424,6 +442,8 @@ def complete_case_summary_rows(
         "accuracy_split",
         "accuracy_samples",
         "learning_rate",
+        "active_node_count",
+        "allocated_node_slot_count",
     ]
     for row in rows:
         row["case_status"] = case_status

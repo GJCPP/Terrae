@@ -776,6 +776,7 @@ def _case_summary_metadata(
     if not isinstance(adaptation, dict):
         adaptation = {}
     checkpoint_case = checkpoint.get("case", {})
+    train_fields = checkpoint.get("train_export", {}).get("fields", {})
     metadata: dict[str, Any] = {
         "case_id": case.case_id,
         "dataset": case.dataset,
@@ -789,6 +790,8 @@ def _case_summary_metadata(
         "bin_count": case.bins,
         "feature_count": adaptation.get("feature_count", ""),
         "real_class_count": adaptation.get("real_class_count", ""),
+        "active_node_count": train_fields.get("active_node_count", ""),
+        "allocated_node_slot_count": train_fields.get("allocated_node_slot_count", ""),
         "learning_rate": (
             f"{checkpoint_case.get('learning_rate_numerator', case.learning_rate_numerator)}/"
             f"{checkpoint_case.get('learning_rate_denominator', case.learning_rate_denominator)}"

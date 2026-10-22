@@ -35,6 +35,7 @@ def _parse_trace_counts(path: Path, real_class_count: int) -> dict[str, int]:
             elif parts[0] == "i64vec" and parts[1] in needed_vectors:
                 vectors[parts[1]] = [int(value) for value in parts[3:]]
     trace_class_count = scalars["training.class_count"]
+    tree_count = scalars["training.tree_count"]
     allocated = scalars["training.node_count"]
     split = vectors["training.split_node_mask"]
     leaf = vectors["training.node_leaf_mask"]
@@ -46,9 +47,36 @@ def _parse_trace_counts(path: Path, real_class_count: int) -> dict[str, int]:
         for split_mask, leaf_mask, tree_id in zip(split, leaf, tree_ids)
         if split_mask or leaf_mask
     ]
-    active_node_count = sum((tree_id - 1) % trace_class_count < real_class_count for tree_id in active)
+    if not 0 < real_class_count <= trace_class_count:
+        raise ValueError(
+            f"invalid real/trace class counts in {path}: "
+            f"{real_class_count}/{trace_class_count}"
+        )
+    if tree_count <= 0 or tree_count % trace_class_count:
+        raise ValueError(
+            f"tree count {tree_count} is incompatible with "
+            f"class count {trace_class_count} in {path}"
+        )
+
+    # Trace schema before 5ef75d6 serialized active tree IDs as 0..T-1.
+    # Newer traces reserve zero for dummy nodes and serialize them as 1..T.
+    # The first tree always has an active root, so the active IDs identify the
+    # convention without relying on the source revision that produced it.
+    has_zero = 0 in active
+    has_tree_count = tree_count in active
+    if has_zero == has_tree_count:
+        raise ValueError(f"cannot determine tree ID base in {path}")
+    tree_id_base = 0 if has_zero else 1
+    if any(not tree_id_base <= tree_id < tree_id_base + tree_count for tree_id in active):
+        raise ValueError(f"active tree ID is out of range in {path}")
+
+    active_node_count = sum(
+        (tree_id - tree_id_base) % trace_class_count < real_class_count
+        for tree_id in active
+    )
     return {
         "trace_class_count": trace_class_count,
+        "tree_id_base": tree_id_base,
         "allocated_node_slot_count": allocated,
         "active_trace_node_count": len(active),
         "active_node_count": active_node_count,
@@ -56,18 +84,33 @@ def _parse_trace_counts(path: Path, real_class_count: int) -> dict[str, int]:
 
 
 def _find_trace(search_dirs: list[Path], case_id: str) -> Path | None:
-    matches: list[Path] = []
+    matches: set[Path] = set()
     for directory in search_dirs:
-        matches.extend(directory.glob(f"**/{case_id}/**/*training.trace"))
-    return min(matches) if matches else None
+        matches.update(
+            path.resolve()
+            for path in directory.glob(f"**/{case_id}/**/*training.trace")
+        )
+    if len(matches) > 1:
+        choices = "\n  ".join(str(path) for path in sorted(matches))
+        raise ValueError(
+            f"multiple training traces found for {case_id}; "
+            f"use a more specific --search-dir:\n  {choices}"
+        )
+    return next(iter(matches), None)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cases-json", type=Path, action="append", required=True)
-    parser.add_argument("--search-dir", type=Path, action="append", default=[Path("out")])
+    parser.add_argument(
+        "--search-dir",
+        type=Path,
+        action="append",
+        help="Directory containing one retained trace per case (default: out).",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    search_dirs = args.search_dir or [Path("out")]
 
     class_counts: dict[tuple[str, int], int] = {}
     rows: list[dict[str, object]] = []
@@ -79,7 +122,7 @@ def main() -> int:
             cache_key = (dataset, bins)
             if cache_key not in class_counts:
                 class_counts[cache_key] = _load_dataset(dataset, bins).class_count
-            trace = _find_trace(args.search_dir, str(case["case_id"]))
+            trace = _find_trace(search_dirs, str(case["case_id"]))
             if trace is None:
                 raise FileNotFoundError(f"training trace not found for {case['case_id']}")
             counts = _parse_trace_counts(trace, class_counts[cache_key])

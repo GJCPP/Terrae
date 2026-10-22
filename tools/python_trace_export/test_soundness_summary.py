@@ -13,6 +13,27 @@ from benchmark_focus_extract import (
 
 
 class SoundnessSummaryTest(unittest.TestCase):
+    def test_trainer_active_nodes_override_native_allocated_slots(self) -> None:
+        payload = {
+            "cost_statistics": {"workload_active_node_count": 32},
+            "metrics": {"node_count": 32},
+        }
+        case_result = {
+            "dataset_adaptation": {},
+            "benchmark_payload": {
+                "train_export": {
+                    "fields": {
+                        "active_node_count": "21",
+                        "allocated_node_slot_count": "32",
+                    }
+                }
+            },
+        }
+        result = _summary_statistics(payload, case_result)
+        self.assertEqual(result["node_count"], 21)
+        self.assertEqual(result["active_node_count"], 21)
+        self.assertEqual(result["allocated_node_slot_count"], 32)
+
     def test_maps_session_metrics_to_appendix_k_columns(self) -> None:
         payload = {
             "cost_statistics": {
