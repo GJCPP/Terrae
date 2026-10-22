@@ -11,6 +11,8 @@ Software requirements:
 - a C++17 compiler such as `g++` or `clang++`
 - Python 3.10 or newer
 - Git, `curl`, and `unzip`
+- Boost development headers, including Multiprecision (`libboost-dev`)
+- GMP and GMPXX development headers and libraries (`libgmp-dev`)
 
 CMake fetches [herumi/mcl](https://github.com/herumi/mcl) at its pinned revision by default. Set `TERRAE_MCL_SOURCE_DIR` to an existing local mcl source tree to avoid that fetch. The benchmark targets download their reference datasets from UCI, so the first run normally requires network access.
 
@@ -70,6 +72,26 @@ manifest.json
 ```
 
 The individual outputs and logs are stored in `out/benchmark/`, `out/benchmark_practical/`, and `out/benchmark_histogram/`. For optional case selection, stage-specific reruns, and benchmark parameter overrides, see [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+
+## Estimated Setup and Runtime
+
+On our dual-Xeon Gold 6326 server (64 logical CPUs, about 188 GiB RAM),
+the following time is consumed:
+
+| Stage | Estimated time |
+| --- | --- |
+| Initial build | 10-30 minutes, plus downloads |
+| Smoke tests after building | 2-5 minutes |
+| Full histogram benchmark | 1-2 hours |
+| GBDT scaling | About 2 days |
+| Practical settings | About 1 day |
+| Complete paper benchmark | 3-5 days |
+
+These are planning estimates based on historical runs, some of which included
+failed or skipped stages. GBDT timings assume cached SRS files; first-time large
+SRS generation was not timed separately, which could require additional hours. Cached runs
+still incur SRS loading costs. Paper prover times exclude SRS preparation and
+are shorter than end-to-end command runtimes.
 
 ## Citation
 

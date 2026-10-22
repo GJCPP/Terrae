@@ -37,6 +37,68 @@ check_python() {
   printf 'version\tpython3\t%s\n' "${python_version}"
 }
 
+# Compile and link in a temporary directory; no project build or download is needed.
+check_cpp_dependencies() {
+  local cxx="${CXX:-c++}"
+  if ! command -v "${cxx}" >/dev/null 2>&1; then
+    printf 'skipped\tcpp_dependencies\tC++ compiler unavailable\n'
+    return
+  fi
+
+  doctor_tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/terrae-doctor.XXXXXXXX")"
+  trap 'rm -rf "${doctor_tmp_dir}"' EXIT
+
+  if ! printf 'int main() { return 0; }\n' |
+      "${cxx}" -std=c++17 -x c++ - -o "${doctor_tmp_dir}/compiler" \
+      >"${doctor_tmp_dir}/compiler.log" 2>&1; then
+    printf 'unsupported\tcxx\t%s cannot compile and link C++17 programs\n' "${cxx}"
+    cat "${doctor_tmp_dir}/compiler.log"
+    status=1
+    return
+  fi
+
+  if "${cxx}" -std=c++17 -x c++ - -o "${doctor_tmp_dir}/boost" \
+      >"${doctor_tmp_dir}/boost.log" 2>&1 <<'CPP'
+#include <boost/multiprecision/cpp_int.hpp>
+#include <boost/multiprecision/cpp_dec_float.hpp>
+int main() {
+    boost::multiprecision::cpp_int integer = 1;
+    boost::multiprecision::cpp_dec_float_50 decimal = 1;
+    return integer.convert_to<int>() != decimal.convert_to<int>();
+}
+CPP
+  then
+    printf 'ok\tboost\tMultiprecision headers compile with %s\n' "${cxx}"
+  else
+    printf 'missing\tboost\tinstall libboost-dev (Debian/Ubuntu); Boost Multiprecision headers must compile\n'
+    cat "${doctor_tmp_dir}/boost.log"
+    status=1
+  fi
+
+  if "${cxx}" -std=c++17 -x c++ - -o "${doctor_tmp_dir}/gmp" -lgmpxx -lgmp \
+      >"${doctor_tmp_dir}/gmp.log" 2>&1 <<'CPP'
+#include <gmp.h>
+#include <gmpxx.h>
+#include <sstream>
+int main() {
+    mpz_t integer;
+    mpz_init(integer);
+    mpz_clear(integer);
+    mpz_class value(1);
+    std::ostringstream output;
+    output << value;
+    return output.str() != "1";
+}
+CPP
+  then
+    printf 'ok\tgmp\tGMP/GMPXX headers and libraries compile and link with %s\n' "${cxx}"
+  else
+    printf 'missing\tgmp\tinstall libgmp-dev (Debian/Ubuntu); GMP/GMPXX headers and libraries must compile and link\n'
+    cat "${doctor_tmp_dir}/gmp.log"
+    status=1
+  fi
+}
+
 printf 'Terrae environment check\n'
 printf 'repo\t%s\n' "${repo_root}"
 
@@ -52,7 +114,8 @@ else
   check_command git "install Git for the default mcl fetch, or set TERRAE_MCL_SOURCE_DIR"
 fi
 check_python
-check_command c++ "install a C++17-capable compiler such as g++ or clang++"
+check_command "${CXX:-c++}" "install a C++17-capable compiler such as g++ or clang++"
+check_cpp_dependencies
 check_command curl "install curl; make datasets uses it"
 check_command unzip "install unzip; the Dry Bean dataset is distributed as a zip"
 
@@ -76,7 +139,7 @@ fi
 if [[ "${status}" -eq 0 ]]; then
   printf 'doctor\tok\n'
 else
-  printf 'doctor\tmissing_required_tools\n'
+  printf 'doctor\tmissing_required_tools_or_dependencies\n'
 fi
 
 exit "${status}"
